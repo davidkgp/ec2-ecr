@@ -29,19 +29,28 @@ export class SimpleEC2 extends cdk.Construct {
       ],
     });
 
+    const ecrGetTokenPolicy = new iam.PolicyStatement();
+    ecrGetTokenPolicy.addAllResources();
+    ecrGetTokenPolicy.addActions(`ecr:GetAuthorizationToken`);
+
+    const ecrReadPolicy = new iam.PolicyStatement();
+    ecrReadPolicy.addResources(ec2props.ecrRepo.repositoryArn);
+    ecrReadPolicy.addActions(`ecr:GetDownloadUrlForLayer`,`ecr:BatchGetImage`);
+
+    const ec2PolicyDocument = new iam.PolicyDocument();
+    ec2PolicyDocument.addStatements(ecrGetTokenPolicy,ecrReadPolicy)
+
+
     const role = new iam.Role(this, `${ec2props.ec2InstanceName}-role`, {
       assumedBy: new iam.ServicePrincipal("ec2.amazonaws.com"),
+      inlinePolicies:{
+        Ec2PolicyDocument:ec2PolicyDocument
+      }
     });
 
-    const ecrPermission = new iam.PolicyStatement();
-    ecrPermission.addAllResources();
-    ecrPermission.addActions(
-      `ecr:GetAuthorizationToken`,
-      `ecr:GetDownloadUrlForLayer`,
-      `ecr:BatchGetImage`
-    );
 
-    role.addToPolicy(ecrPermission);
+
+
 
     const securityGroup = new ec2.SecurityGroup(
       this,
@@ -60,13 +69,10 @@ export class SimpleEC2 extends cdk.Construct {
       "Allows SSH access from Internet"
     );
 
+    
+
     // define a user data script to install & launch our web server
     const userData = UserData.forLinux();
-
-    // install and start Nginx
-    // userData.addCommands('sudo yum install -y yum-utils');
-    // userData.addCommands('sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo');
-    // userData.addCommands('sudo yum install -y docker-ce docker-ce-cli containerd.io');
 
     userData.addCommands(
       "sudo apt-get remove docker docker-engine docker.io containerd runc"
@@ -95,6 +101,12 @@ export class SimpleEC2 extends cdk.Construct {
       "sudo apt-get -y install docker-ce docker-ce-cli containerd.io"
     );
 
+    userData.addCommands(
+      "sudo usermod -aG docker $USER"
+    );
+
+    
+
     // Finally lets provision our ec2 instance
     const instance = new ec2.Instance(this, ec2props.ec2InstanceName, {
       keyName: "simple-key",
@@ -118,16 +130,7 @@ export class SimpleEC2 extends cdk.Construct {
       userData: userData,
     });
 
-    // const asset = new Asset(this, 'Asset', {path: path.join(__dirname,'..','setup', 'configure.sh')});
 
-    // const localPath = instance.userData.addS3DownloadCommand({
-    //   bucket:asset.bucket,
-    //   bucketKey:asset.s3ObjectKey,
-    // });
-    // instance.userData.addExecuteFileCommand({
-    //   filePath:localPath
-    // });
-    // asset.grantRead( instance.role );
 
     // cdk lets us output prperties of the resources we create after they are created
     // we want the ip address of this new instance so we can ssh into it later
